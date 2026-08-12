@@ -12,12 +12,18 @@ const OcrParser = (() => {
 
   let activeProgressCallback = null;
 
+  // Caminhos absolutos: o worker do Tesseract carrega corePath/langPath de
+  // dentro dele mesmo, então um caminho relativo ("./vendor/...") resolve
+  // relativo à localização do PRÓPRIO worker (./vendor/worker.min.js), não
+  // à página — duplicando "vendor/vendor/..." e quebrando o carregamento.
+  const abs = (path) => new URL(path, document.baseURI).href;
+
   function getWorker() {
     if (!workerPromise) {
       workerPromise = Tesseract.createWorker("por", 1, {
-        workerPath: "./vendor/worker.min.js",
-        corePath: "./vendor/tesseract-core-simd.wasm.js",
-        langPath: "./vendor/lang",
+        workerPath: abs("./vendor/worker.min.js"),
+        corePath: abs("./vendor/tesseract-core-simd.wasm.js"),
+        langPath: abs("./vendor/lang"),
         gzip: true,
         logger: (m) => {
           if (activeProgressCallback) {

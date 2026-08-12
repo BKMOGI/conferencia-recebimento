@@ -377,6 +377,27 @@
     return null;
   }
 
+  function populateProdutoSelect(matchedItemId) {
+    const sel = $("#lbl-produto-select");
+    const opcoes = ['<option value="">➕ Não está na lista (digitar/corrigir manualmente)</option>'];
+    currentSession.itens.forEach((item) => {
+      const rotulo = `${item.codigo ? item.codigo + " — " : ""}${item.descricao || "(sem descrição)"}`;
+      opcoes.push(`<option value="${item.id}">${escapeAttr(rotulo)}</option>`);
+    });
+    sel.innerHTML = opcoes.join("");
+    sel.value = matchedItemId || "";
+  }
+
+  $("#lbl-produto-select").addEventListener("change", (e) => {
+    const item = currentSession.itens.find((i) => i.id === e.target.value);
+    if (item) {
+      $("#lbl-produto").value = item.descricao || "";
+      $("#lbl-codigo").value = item.codigo || "";
+      $("#lbl-ean").value = item.ean || "";
+    }
+    updateMatchInfo();
+  });
+
   function openReviewLabel() {
     $("#label-foto-preview").src = currentLabelData.fotoDataUrl;
     $("#lbl-produto").value = currentLabelData.produto || "";
@@ -387,9 +408,17 @@
     $("#lbl-fabricacao").value = currentLabelData.fabricacao || "";
     $("#lbl-validade").value = currentLabelData.validade || "";
 
+    const matched = findMatch(currentLabelData);
+    populateProdutoSelect(matched ? matched.id : "");
+    if (matched) {
+      $("#lbl-produto").value = matched.descricao || "";
+      $("#lbl-codigo").value = matched.codigo || "";
+      $("#lbl-ean").value = matched.ean || "";
+    }
+
     const status = $("#label-ocr-status");
     status.hidden = false;
-    status.textContent = "Confira os campos abaixo — o OCR pode errar, corrija se precisar.";
+    status.textContent = "Confira os campos — se o código não bateu, digite o código certo (o produto preenche sozinho) ou escolha na lista.";
     status.className = "status-box";
 
     updateMatchInfo();
@@ -406,12 +435,17 @@
     if (match) {
       box.className = "match-info matched";
       box.textContent = `✓ Encontrado na NF: ${match.descricao || match.codigo}`;
+      $("#lbl-produto").value = match.descricao || $("#lbl-produto").value;
+      $("#lbl-produto-select").value = match.id;
     } else {
       box.className = "match-info unmatched";
       box.textContent = "⚠ Não encontrado na NF — será adicionado como item extra (sobra).";
+      $("#lbl-produto-select").value = "";
     }
   }
 
+  // Digitar o código (ou EAN) direto também busca e preenche o produto da NF
+  // automaticamente — não precisa necessariamente escolher na lista.
   ["lbl-ean", "lbl-codigo"].forEach((id) => {
     $(`#${id}`).addEventListener("input", updateMatchInfo);
   });
