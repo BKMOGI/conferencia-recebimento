@@ -131,46 +131,79 @@ const OcrParser = (() => {
     };
   }
 
-  // ---- Extração heurística de itens de uma NF em PDF/foto (sem XML) ----
+  // ---- Extração de itens de uma NF em PDF/foto (sem XML) ----
+  //
+  // O layout de tabela do DANFE é padronizado pela SEFAZ: cada item tem, nessa
+  // ordem, NCM/SH (8 dígitos) · CST (3 dígitos) · CFOP (X.XXX) · Unidade ·
+  // Quantidade. Isso vale pra praticamente qualquer emissor, não só um ERP
+  // específico — por isso usamos essa sequência como "âncora" pra encontrar
+  // onde cada item começa e termina, em vez de tentar ler célula por célula
+  // (que varia muito de layout pra layout e falha fácil).
+  const UNIDADES_NF = "PCT|CX|UN|KG|FD|CT|PC|DZ|LT|GL|SC|RL|MT|PAR";
+  // Âncora no início de linha: no texto extraído, o código do produto sempre
+  // começa uma linha nova. As linhas soltas de preço/imposto no meio são só
+  // números — por isso exige (via lookahead, sem consumir) que exista uma
+  // letra ainda na mesma linha do código, o que descarta essas linhas como
+  // falso começo de item. A descrição em si é capturada de forma não-gulosa,
+  // pois às vezes ela fica na mesma linha dos números da tabela, às vezes não.
+  const ITEM_ANCHOR_RE = new RegExp(
+    "^(\\d{2,10})[\\-\\d]*[ \\t]+(?=[^\\n]*[A-Za-zÀ-ÿ])([\\s\\S]{3,300}?)(\\d{8})\\s+(\\d{3})\\s+(\\d\\.?\\d{3})\\s+(" +
+      UNIDADES_NF + ")\\s+([\\d.,]+)\\s+([\\d.,]+)",
+    "gm"
+  );
+
+  function parseNumeroBR(str) {
+    const n = parseFloat((str || "").replace(/\./g, "").replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function limparDescricao(blob) {
+    return blob
+      .replace(/\n/g, " ")
+      .split(/\bMVA\b/i)[0]
+      .replace(/GTIN:?\s*\d{8,14}/i, "")
+      .replace(/SEM\s+GTIN/i, "")
+      .replace(/GTIN/i, "")
+      .replace(/\d{2}\/\d{2}\/\d{2,4}/g, "")
+      .replace(/-\d+\/[\d,]+/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
 
   function parseItensNF(rawText) {
-    const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const text = rawText.replace(/[ \t]+/g, " ");
     const itens = [];
-
-    for (const line of lines) {
-      const numbers = line.match(/\d[\d.,]{1,}/g) || [];
-      const eanMatch = line.match(/\b\d{13}\b/);
-      const digitsOnly = numbers.filter((n) => /^\d+$/.test(n));
-      const codigo = digitsOnly.find((n) => n.length >= 3 && n.length <= 8) || "";
-
-      if (!codigo && !eanMatch) continue;
-
-      const descricao = line
-        .replace(eanMatch ? eanMatch[0] : "", "")
-        .replace(/\d[\d.,]{2,}/g, " ")
-        .replace(/\s{2,}/g, " ")
-        .trim();
-
+    let match;
+    ITEM_ANCHOR_RE.lastIndex = 0;
+    while ((match = ITEM_ANCHOR_RE.exec(text)) !== null) {
+      const [, codigo, descBlob, , , , unidade, quantStr] = match;
+      const eanMatch = descBlob.match(/GTIN:?\s*(\d{8,14})/i);
+      const descricao = limparDescricao(descBlob);
       if (descricao.length < 3) continue;
-
-      const qtyCandidates = numbers.filter((n) => n !== (eanMatch && eanMatch[0]) && n !== codigo && parseFloat(n.replace(",", ".")) < 10000);
-      const quantidade = qtyCandidates.length ? parseFloat(qtyCandidates[0].replace(",", ".")) : 0;
 
       itens.push({
         id: `ocr_${itens.length + 1}`,
-        codigo: codigo || "",
-        ean: eanMatch ? eanMatch[0] : "",
+        codigo,
+        ean: eanMatch ? eanMatch[1] : "",
         descricao,
-        unidade: "",
-        quantidadeEsperada: quantidade,
+        unidade,
+        quantidadeEsperada: parseNumeroBR(quantStr),
         quantidadeRecebida: 0,
       });
     }
-
     return itens;
   }
 
-  // ---- Renderiza uma página de PDF em canvas usando pdf.js ----
+  // Tenta achar o número da NF no texto (funciona pro PDF/foto — quando vem
+  // de XML já temos isso certo via nfeParser).
+  function parseNumeroNF(rawText) {
+    const m = rawText.match(/N[ºo°]\.?:?\s*([\d.]{3,20})/i);
+    if (!m) return "";
+    const digits = m[1].replace(/\D/g, "").replace(/^0+/, "");
+    return digits || m[1];
+  }
+
+  // ---- Renderiza uma página de PDF em canvas usando pdf.js (fallback OCR) ----
 
   async function renderPdfPageToCanvas(arrayBuffer, pageNumber = 1) {
     if (!window.pdfjsLib) throw new Error("pdf.js não carregado.");
@@ -185,11 +218,40 @@ const OcrParser = (() => {
     return { canvas, numPages: pdf.numPages };
   }
 
+  // Extrai o texto real embutido no PDF (rápido e exato — sem OCR). A grande
+  // maioria dos DANFE em PDF é gerada por um ERP e já tem essa camada de
+  // texto; só cai pra OCR quando o PDF é uma foto/scan sem texto embutido.
+  async function extractPdfText(arrayBuffer) {
+    if (!window.pdfjsLib) throw new Error("pdf.js não carregado.");
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = "";
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      let lastY = null;
+      let line = "";
+      for (const item of content.items) {
+        const y = item.transform[5];
+        if (lastY !== null && Math.abs(y - lastY) > 2) {
+          fullText += line.trim() + "\n";
+          line = "";
+        }
+        line += item.str + " ";
+        lastY = y;
+      }
+      fullText += line.trim() + "\n";
+    }
+    return fullText;
+  }
+
   return {
     recognize,
     parseEtiqueta,
     parseItensNF,
+    parseNumeroNF,
     renderPdfPageToCanvas,
+    extractPdfText,
     resizeToCanvas,
     terminate,
   };

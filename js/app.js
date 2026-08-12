@@ -161,19 +161,36 @@
     try {
       showLoading("Abrindo PDF…");
       const buffer = await fileToArrayBuffer(file);
-      const { canvas, numPages } = await OcrParser.renderPdfPageToCanvas(buffer, 1);
-      setLoadingText("Lendo itens da NF (OCR)…");
-      let text = await ocrTextFromCanvas(canvas, "Lendo página 1");
-      for (let p = 2; p <= Math.min(numPages, 5); p++) {
-        const { canvas: c2 } = await OcrParser.renderPdfPageToCanvas(buffer, p);
-        text += "\n" + (await ocrTextFromCanvas(c2, `Lendo página ${p}`));
+
+      // A maioria dos PDFs de DANFE já tem o texto embutido (gerado pelo ERP do
+      // fornecedor) — ler isso direto é instantâneo e muito mais preciso que OCR.
+      // Só recorre a OCR se o PDF for uma foto/scan sem texto (raro pra DANFE).
+      setLoadingText("Lendo texto do PDF…");
+      let text = await OcrParser.extractPdfText(buffer);
+      let usouOcr = false;
+
+      if (text.replace(/\s/g, "").length < 200) {
+        usouOcr = true;
+        setLoadingText("PDF sem texto — lendo por OCR…");
+        const { canvas, numPages } = await OcrParser.renderPdfPageToCanvas(buffer, 1);
+        text = await ocrTextFromCanvas(canvas, "Lendo página 1");
+        for (let p = 2; p <= Math.min(numPages, 5); p++) {
+          const { canvas: c2 } = await OcrParser.renderPdfPageToCanvas(buffer, p);
+          text += "\n" + (await ocrTextFromCanvas(c2, `Lendo página ${p}`));
+        }
       }
+
       const itens = OcrParser.parseItensNF(text);
+      const numeroNF = OcrParser.parseNumeroNF(text);
       hideLoading();
       if (itens.length === 0) {
-        showImportStatus("Não consegui identificar itens automaticamente no PDF. Você pode adicionar os itens manualmente na próxima tela.", "error");
+        showImportStatus(
+          (usouOcr ? "Não consegui identificar itens automaticamente no PDF (OCR). " : "Não consegui identificar a tabela de itens no PDF. ") +
+          "Você pode adicionar os itens manualmente na próxima tela.",
+          "error"
+        );
       }
-      startReviewFromItens(itens, "", "");
+      startReviewFromItens(itens, numeroNF, "");
     } catch (err) {
       hideLoading();
       showImportStatus("Erro ao processar o PDF: " + err.message, "error");
@@ -190,11 +207,12 @@
       const img = await dataUrlToImage(dataUrl);
       const text = await ocrTextFromCanvas(img, "Lendo NF");
       const itens = OcrParser.parseItensNF(text);
+      const numeroNF = OcrParser.parseNumeroNF(text);
       hideLoading();
       if (itens.length === 0) {
         showImportStatus("Não consegui identificar itens automaticamente na foto. Você pode adicionar os itens manualmente na próxima tela.", "error");
       }
-      startReviewFromItens(itens, "", "");
+      startReviewFromItens(itens, numeroNF, "");
     } catch (err) {
       hideLoading();
       showImportStatus("Erro ao processar a foto: " + err.message, "error");
