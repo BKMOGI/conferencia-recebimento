@@ -378,6 +378,28 @@
     return null;
   }
 
+  // A própria descrição do item na NF costuma dizer quantas unidades vêm por
+  // caixa (ex: "CX C/12 UNID", ou "PCT C/4 - CX C/12 PCTS"). Quando o OCR não
+  // lê a quantidade da etiqueta, usa isso como sugestão em vez de deixar em
+  // branco — pega o ÚLTIMO "C/nº" da descrição (o mais próximo da unidade que
+  // a NF realmente conta).
+  function sugerirQuantidadePorEmbalagem(descricao) {
+    if (!descricao) return null;
+    const achados = [...descricao.matchAll(/C\/\s*(\d{1,4})/gi)];
+    if (!achados.length) return null;
+    return parseFloat(achados[achados.length - 1][1]);
+  }
+
+  function preencherQuantidadeSeVazia(descricao) {
+    const campo = $("#lbl-quantidade");
+    if (campo.value.trim() !== "") return;
+    const sugestao = sugerirQuantidadePorEmbalagem(descricao);
+    if (sugestao != null) {
+      campo.value = sugestao;
+      campo.style.borderColor = "";
+    }
+  }
+
   function populateProdutoSelect(matchedItemId) {
     const sel = $("#lbl-produto-select");
     const opcoes = ['<option value="">➕ Não está na lista (digitar/corrigir manualmente)</option>'];
@@ -395,6 +417,7 @@
       $("#lbl-produto").value = item.descricao || "";
       $("#lbl-codigo").value = item.codigo || "";
       $("#lbl-ean").value = item.ean || "";
+      preencherQuantidadeSeVazia(item.descricao);
     }
     updateMatchInfo();
   });
@@ -422,6 +445,7 @@
       $("#lbl-produto").value = matched.descricao || "";
       $("#lbl-codigo").value = matched.codigo || "";
       $("#lbl-ean").value = matched.ean || "";
+      preencherQuantidadeSeVazia(matched.descricao);
     }
 
     const status = $("#label-ocr-status");
@@ -450,6 +474,7 @@
         : `✓ Encontrado na NF: ${match.descricao || match.codigo}`;
       $("#lbl-produto").value = match.descricao || $("#lbl-produto").value;
       $("#lbl-produto-select").value = match.id;
+      preencherQuantidadeSeVazia(match.descricao);
     } else {
       box.className = "match-info unmatched";
       box.textContent = "⚠ Não encontrado na NF — será adicionado como item extra (sobra).";
