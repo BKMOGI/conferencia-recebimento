@@ -1,4 +1,4 @@
-const CACHE_NAME = "conferencia-recebimento-v2";
+const CACHE_NAME = "conferencia-recebimento-v3";
 
 // Bibliotecas grandes que quase nunca mudam: cache primeiro (funcionam offline).
 const VENDOR_ASSETS = [
@@ -67,8 +67,13 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Network-first: código do app, pra sempre pegar a versão mais nova quando online.
+  // {cache:"no-cache"} é essencial aqui — o GitHub Pages manda Cache-Control:
+  // max-age=600 nos arquivos, e um fetch() comum respeita o cache HTTP do
+  // navegador (não só o Cache Storage do service worker), então sem isso a
+  // "busca da rede" podia devolver uma cópia de até 10 min atrás mesmo com
+  // internet disponível.
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: "no-cache" })
       .then((resp) => {
         if (resp && resp.status === 200) {
           const copy = resp.clone();
