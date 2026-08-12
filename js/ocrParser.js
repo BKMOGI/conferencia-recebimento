@@ -31,6 +31,14 @@ const OcrParser = (() => {
             activeProgressCallback(label, Math.round((m.progress || 0) * 100));
           }
         },
+      }).then(async (worker) => {
+        // PSM 4 = "single column, tamanhos de texto variados" — etiqueta tem
+        // linhas de fontes bem diferentes (nome grande, campos pequenos,
+        // código enorme em negrito) empilhadas numa coluna só. O modo
+        // automático padrão estava confundindo/perdendo linhas inteiras
+        // perto do código de barras e do número grande.
+        await worker.setParameters({ tessedit_pageseg_mode: "4" });
+        return worker;
       });
     }
     return workerPromise;
