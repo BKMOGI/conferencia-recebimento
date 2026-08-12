@@ -110,11 +110,25 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px 14px;
-  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
+.sessao-item .sessao-info { flex: 1; cursor: pointer; }
 .sessao-item .sessao-nf { font-weight: 600; }
 .sessao-item .sessao-meta { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+
+.btn-excluir-sessao {
+  background: none;
+  border: none;
+  font-size: 18px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.btn-excluir-sessao:active { background: rgba(217,80,63,0.15); }
 
 .hint { color: var(--text-dim); font-size: 14px; margin-bottom: 16px; }
 

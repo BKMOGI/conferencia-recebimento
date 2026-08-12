@@ -95,15 +95,30 @@
       const total = s.itens.length;
       const ok = s.itens.filter((i) => i.quantidadeRecebida === i.quantidadeEsperada).length;
       return `<div class="sessao-item" data-id="${s.id}">
-        <div class="sessao-nf">NF ${s.numeroNF || "(sem número)"} — ${s.fornecedor || "sem fornecedor"}</div>
-        <div class="sessao-meta">${ok}/${total} itens conferidos · ${new Date(s.criadoEm).toLocaleDateString("pt-BR")}</div>
+        <div class="sessao-info">
+          <div class="sessao-nf">NF ${s.numeroNF || "(sem número)"} — ${s.fornecedor || "sem fornecedor"}</div>
+          <div class="sessao-meta">${ok}/${total} itens conferidos · ${new Date(s.criadoEm).toLocaleDateString("pt-BR")}</div>
+        </div>
+        <button class="btn-excluir-sessao" data-id="${s.id}" aria-label="Excluir">🗑</button>
       </div>`;
     }).join("");
-    el.querySelectorAll(".sessao-item").forEach((node) => {
+    el.querySelectorAll(".sessao-info").forEach((node) => {
       node.addEventListener("click", async () => {
-        currentSession = await Db.getSession(node.dataset.id);
+        const id = node.closest(".sessao-item").dataset.id;
+        currentSession = await Db.getSession(id);
         showScreen("screen-conference", `NF ${currentSession.numeroNF || ""}`, true);
         renderConference();
+      });
+    });
+    el.querySelectorAll(".btn-excluir-sessao").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const s = sessions.find((s) => s.id === btn.dataset.id);
+        const nome = `NF ${s.numeroNF || "(sem número)"}`;
+        if (confirm(`Excluir a conferência "${nome}"? Não dá pra desfazer.`)) {
+          await Db.deleteSession(btn.dataset.id);
+          renderHome();
+        }
       });
     });
   }
