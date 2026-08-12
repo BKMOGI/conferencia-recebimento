@@ -117,9 +117,10 @@
     box.className = "status-box" + (type ? ` ${type}` : "");
   }
 
-  async function ocrTextFromCanvas(canvas, label) {
-    const small = OcrParser.resizeToCanvas(canvas);
-    return OcrParser.recognize(small, (statusLabel, pct) => {
+  async function ocrTextFromCanvas(canvas, label, options = {}) {
+    let prepared = OcrParser.resizeToCanvas(canvas, options.maxDim || 1800);
+    if (options.preprocess) prepared = OcrParser.preprocessCanvas(prepared);
+    return OcrParser.recognize(prepared, (statusLabel, pct) => {
       setLoadingText(pct > 0 ? `${label}: ${statusLabel} (${pct}%)` : `${label}: ${statusLabel}…`);
     });
   }
@@ -352,7 +353,7 @@
       showLoading("Lendo etiqueta (OCR)…");
       const dataUrl = await fileToDataUrl(file);
       const img = await dataUrlToImage(dataUrl);
-      const text = await ocrTextFromCanvas(img, "Lendo etiqueta");
+      const text = await ocrTextFromCanvas(img, "Lendo etiqueta", { maxDim: 2200, preprocess: true });
       const parsed = OcrParser.parseEtiqueta(text);
       hideLoading();
 

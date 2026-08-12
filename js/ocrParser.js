@@ -50,6 +50,49 @@ const OcrParser = (() => {
     return canvas;
   }
 
+  // Escala de cinza + esticamento de contraste (por percentil, mais robusto
+  // que min/max puro contra reflexo/sombra). Técnica padrão pra melhorar
+  // OCR em foto de etiqueta impressa — texto preto sobre fundo claro fica
+  // bem mais nítido/definido pro Tesseract depois disso.
+  function preprocessCanvas(canvas) {
+    const ctx = canvas.getContext("2d");
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = imgData.data;
+    const hist = new Array(256).fill(0);
+    const gray = new Uint8ClampedArray(d.length / 4);
+
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      const g = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      gray[p] = g;
+      hist[g]++;
+    }
+
+    const total = gray.length;
+    const lowCut = total * 0.02;
+    const highCut = total * 0.98;
+    let acc = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) {
+      acc += hist[v];
+      if (acc >= lowCut) { lo = v; break; }
+    }
+    acc = 0;
+    for (let v = 255; v >= 0; v--) {
+      acc += hist[v];
+      if (acc >= total - highCut) { hi = v; break; }
+    }
+    if (hi <= lo) { hi = 255; lo = 0; }
+
+    const range = hi - lo;
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+      let v = ((gray[p] - lo) / range) * 255;
+      v = v < 0 ? 0 : v > 255 ? 255 : v;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  }
+
   async function recognize(imageSourceOrCanvas, onProgress) {
     const worker = await getWorker();
     activeProgressCallback = onProgress || null;
@@ -303,6 +346,7 @@ const OcrParser = (() => {
     renderPdfPageToCanvas,
     extractPdfText,
     resizeToCanvas,
+    preprocessCanvas,
     terminate,
   };
 })();
