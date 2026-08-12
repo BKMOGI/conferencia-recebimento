@@ -278,6 +278,9 @@ input[type="text"], input[type="number"] {
   justify-content: center;
   z-index: 100;
 }
+.loading-overlay[hidden] {
+  display: none;
+}
 .loading-box {
   background: var(--surface);
   border: 1px solid var(--border);
