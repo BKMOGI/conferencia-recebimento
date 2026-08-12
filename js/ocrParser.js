@@ -77,21 +77,47 @@ const OcrParser = (() => {
     val: /(?:VAL(?:IDADE)?|VENC(?:IMENTO)?)[\s.:]*[\D]{0,3}(\d{2}[\/\.\-]\d{2}[\/\.\-]\d{2,4})/i,
     codigo: /C[ÓO]D(?:IGO)?[\s.:]*([A-Z0-9\-]{2,20})/i,
     qtd: /(?:QTD|QUANTIDADE)[\s.:]*(\d{1,6})/i,
-    ean: /\b(\d{13}|\d{14}|\d{12}|\d{8})\b/,
     anyDate: /\d{2}[\/\.\-]\d{2}[\/\.\-]\d{2,4}/g,
   };
+
+  // O código de barras (GTIN) quase sempre tem 12-14 dígitos, e fica perto da
+  // imagem do código de barras (normalmente no fim da etiqueta) — por isso
+  // prioriza a ocorrência mais longa e mais ao final do texto. Números de 8
+  // dígitos soltos são ambíguos com o código do produto (ex: "22093170"), então
+  // só são tratados como EAN se não houver nenhum candidato mais longo.
+  function extrairEan(text) {
+    for (const len of [14, 13, 12]) {
+      const re = new RegExp("\\b\\d{" + len + "}\\b", "g");
+      const achados = text.match(re);
+      if (achados && achados.length) return achados[achados.length - 1];
+    }
+    const oito = text.match(/\b\d{8}\b/g);
+    if (oito && oito.length) return oito[oito.length - 1];
+    return "";
+  }
 
   function normalizeDate(d) {
     if (!d) return "";
     return d.replace(/[.\-]/g, "/");
   }
 
+  // Palavras que marcam onde um campo conhecido começa numa linha. O OCR às
+  // vezes junta o nome do produto com o campo seguinte numa linha só (ex:
+  // "BOLO DE POTE BRIGADEIRO DATA DE FABRICAÇÃO: 18/07/2026") — em vez de
+  // descartar a linha inteira, corta no início da palavra-chave e aproveita
+  // o pedaço antes dela.
+  const CAMPO_KEYWORD_RE = /\b(DATA\s+DE\s+FABRICA[ÇC][ÃA]O|FABRICA[ÇC][ÃA]O|LOTE|VALIDADE|VENCIMENTO|C[ÓO]DIGO|QTD|QUANTIDADE|CONGELADO|PESO\s+L[ÍI]QUIDO|GTIN)\b/i;
+
   function guessProductName(lines) {
-    for (const line of lines) {
-      const clean = line.trim();
+    for (let line of lines) {
+      let clean = line.trim();
       if (clean.length < 4) continue;
       if (/^\d+$/.test(clean)) continue;
-      if (RE.lote.test(clean) || RE.fab.test(clean) || RE.val.test(clean) || RE.codigo.test(clean) || RE.qtd.test(clean)) continue;
+      const corte = clean.match(CAMPO_KEYWORD_RE);
+      if (corte && corte.index !== undefined) {
+        clean = clean.slice(0, corte.index).trim();
+      }
+      if (clean.length < 4) continue;
       const letters = clean.replace(/[^A-Za-zÀ-ÿ]/g, "");
       if (letters.length >= 4) return clean;
     }
@@ -99,13 +125,15 @@ const OcrParser = (() => {
   }
 
   // Muitas etiquetas mostram o código do produto como um número grande e
-  // isolado, sem a palavra "código" do lado (ex: etiquetas da Bread King).
-  // Se não achou via "COD:", procura uma linha com só dígitos (3 a 7) que
-  // não seja o EAN nem coincida com lote/data já identificados.
-  function guessCodigoAvulso(lines, excluir) {
-    for (const line of lines) {
-      const clean = line.trim().replace(/\s+/g, "");
-      if (/^\d{3,7}$/.test(clean) && !excluir.includes(clean)) return clean;
+  // isolado, sem a palavra "código" do lado (ex: etiquetas da Bread King) —
+  // às vezes até na mesma linha visual que "VALIDADE: dd/mm/aaaa", então não
+  // dá pra exigir que ele esteja sozinho na linha. Em vez disso, procura por
+  // qualquer "palavra" solta de 4 a 9 dígitos no texto todo (sem barras, sem
+  // ser o EAN nem um valor já usado como lote/quantidade).
+  function guessCodigoAvulso(text, excluir) {
+    const tokens = text.split(/\s+/);
+    for (const tok of tokens) {
+      if (/^\d{4,9}$/.test(tok) && !excluir.includes(tok)) return tok;
     }
     return "";
   }
@@ -117,13 +145,13 @@ const OcrParser = (() => {
     const lote = (text.match(RE.lote) || [])[1] || "";
     const fab = normalizeDate((text.match(RE.fab) || [])[1] || "");
     const val = normalizeDate((text.match(RE.val) || [])[1] || "");
-    const ean = (text.match(RE.ean) || [])[1] || "";
+    const ean = extrairEan(text);
     const qtd = (text.match(RE.qtd) || [])[1] || "";
     const produto = guessProductName(lines);
 
     let codigo = (text.match(RE.codigo) || [])[1] || "";
     if (!codigo) {
-      codigo = guessCodigoAvulso(lines, [lote, fab, val, ean].filter(Boolean));
+      codigo = guessCodigoAvulso(text, [lote, fab, val, ean, qtd].filter(Boolean));
     }
 
     // Se não achou FAB/VAL rotulados, tenta pegar as duas primeiras datas soltas do texto.
