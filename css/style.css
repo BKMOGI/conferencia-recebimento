@@ -265,6 +265,27 @@ input[type="text"], input[type="number"] {
 .match-info.matched { border-color: var(--ok); color: #b7f0cf; }
 .match-info.unmatched { border-color: var(--warn); color: #f2d9a8; }
 
+.debug-ocr {
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.debug-ocr summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.debug-ocr pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
 .resumo-final {
   display: grid;
   grid-template-columns: 1fr 1fr;

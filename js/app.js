@@ -428,6 +428,8 @@
     status.textContent = "Confira os campos — se o código não bateu, digite o código certo (o produto preenche sozinho) ou escolha na lista.";
     status.className = "status-box";
 
+    $("#lbl-texto-ocr").textContent = currentLabelData.textoOriginal || "(sem texto)";
+
     updateMatchInfo();
     showScreen("screen-review-label", "Revisar etiqueta", true);
   }
