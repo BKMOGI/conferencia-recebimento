@@ -2,7 +2,17 @@
 const OcrParser = (() => {
   let workerPromise = null;
 
-  function getWorker(onProgress) {
+  const STATUS_LABELS = {
+    "loading tesseract core": "Carregando motor de OCR",
+    "initializing tesseract": "Iniciando OCR",
+    "loading language traineddata": "Carregando idioma (1ª vez pode demorar)",
+    "initializing api": "Preparando leitura",
+    "recognizing text": "Lendo texto",
+  };
+
+  let activeProgressCallback = null;
+
+  function getWorker() {
     if (!workerPromise) {
       workerPromise = Tesseract.createWorker("por", 1, {
         workerPath: "./vendor/worker.min.js",
@@ -10,8 +20,9 @@ const OcrParser = (() => {
         langPath: "./vendor/lang",
         gzip: true,
         logger: (m) => {
-          if (onProgress && m.status === "recognizing text") {
-            onProgress(Math.round((m.progress || 0) * 100));
+          if (activeProgressCallback) {
+            const label = STATUS_LABELS[m.status] || m.status;
+            activeProgressCallback(label, Math.round((m.progress || 0) * 100));
           }
         },
       });
@@ -19,10 +30,29 @@ const OcrParser = (() => {
     return workerPromise;
   }
 
+  // Reduz a foto antes do OCR — fotos de câmera (ex: 4000x3000) deixam o
+  // reconhecimento extremamente lento/instável em celulares. 1800px no maior
+  // lado é suficiente para ler texto de etiqueta/DANFE sem travar o aparelho.
+  function resizeToCanvas(imgOrCanvas, maxDim = 1800) {
+    const srcW = imgOrCanvas.naturalWidth || imgOrCanvas.width;
+    const srcH = imgOrCanvas.naturalHeight || imgOrCanvas.height;
+    const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(srcW * scale);
+    canvas.height = Math.round(srcH * scale);
+    canvas.getContext("2d").drawImage(imgOrCanvas, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
   async function recognize(imageSourceOrCanvas, onProgress) {
-    const worker = await getWorker(onProgress);
-    const { data } = await worker.recognize(imageSourceOrCanvas);
-    return data.text || "";
+    const worker = await getWorker();
+    activeProgressCallback = onProgress || null;
+    try {
+      const { data } = await worker.recognize(imageSourceOrCanvas);
+      return data.text || "";
+    } finally {
+      activeProgressCallback = null;
+    }
   }
 
   // ---- Extração de campos da etiqueta de caixa ----
@@ -146,5 +176,6 @@ const OcrParser = (() => {
     parseEtiqueta,
     parseItensNF,
     renderPdfPageToCanvas,
+    resizeToCanvas,
   };
 })();

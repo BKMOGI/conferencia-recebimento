@@ -113,7 +113,10 @@
   }
 
   async function ocrTextFromCanvas(canvas, label) {
-    return OcrParser.recognize(canvas, (pct) => setLoadingText(`${label} (${pct}%)`));
+    const small = OcrParser.resizeToCanvas(canvas);
+    return OcrParser.recognize(small, (statusLabel, pct) => {
+      setLoadingText(pct > 0 ? `${label}: ${statusLabel} (${pct}%)` : `${label}: ${statusLabel}…`);
+    });
   }
 
   function startReviewFromItens(itens, numeroNF, fornecedor) {
