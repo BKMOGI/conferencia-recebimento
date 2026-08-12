@@ -55,6 +55,20 @@ const OcrParser = (() => {
     }
   }
 
+  // Derruba o worker de OCR (usado pelo botão "Cancelar" caso algo trave) —
+  // a próxima chamada a recognize() cria um worker novo do zero.
+  async function terminate() {
+    const pending = workerPromise;
+    workerPromise = null;
+    if (!pending) return;
+    try {
+      const worker = await pending;
+      await worker.terminate();
+    } catch (e) {
+      // worker já pode estar travado/quebrado — ignora, um novo será criado na próxima OCR.
+    }
+  }
+
   // ---- Extração de campos da etiqueta de caixa ----
 
   const RE = {
@@ -177,5 +191,6 @@ const OcrParser = (() => {
     parseItensNF,
     renderPdfPageToCanvas,
     resizeToCanvas,
+    terminate,
   };
 })();

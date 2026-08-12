@@ -18,6 +18,11 @@
     $("#loading-text").textContent = text;
   }
 
+  $("#btn-cancelar-loading").addEventListener("click", () => {
+    hideLoading();
+    OcrParser.terminate();
+  });
+
   function showScreen(id, title, push = true) {
     const current = $(".screen.active");
     if (push && current) screenStack.push({ id: current.id, title: $("#topbar-title").textContent });
