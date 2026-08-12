@@ -403,7 +403,14 @@
     $("#lbl-produto").value = currentLabelData.produto || "";
     $("#lbl-codigo").value = currentLabelData.codigo || "";
     $("#lbl-ean").value = currentLabelData.ean || "";
-    $("#lbl-quantidade").value = currentLabelData.quantidade || 1;
+    const qtdInput = $("#lbl-quantidade");
+    if (currentLabelData.quantidade != null) {
+      qtdInput.value = currentLabelData.quantidade;
+      qtdInput.style.borderColor = "";
+    } else {
+      qtdInput.value = "";
+      qtdInput.style.borderColor = "var(--warn)";
+    }
     $("#lbl-lote").value = currentLabelData.lote || "";
     $("#lbl-fabricacao").value = currentLabelData.fabricacao || "";
     $("#lbl-validade").value = currentLabelData.validade || "";
@@ -450,11 +457,23 @@
     $(`#${id}`).addEventListener("input", updateMatchInfo);
   });
 
+  $("#lbl-quantidade").addEventListener("input", (e) => {
+    e.target.style.borderColor = "";
+  });
+
   $("#btn-confirmar-etiqueta").addEventListener("click", async () => {
+    const qtdRaw = $("#lbl-quantidade").value.trim();
+    if (qtdRaw === "" || isNaN(parseFloat(qtdRaw))) {
+      $("#lbl-quantidade").style.borderColor = "var(--danger)";
+      $("#lbl-quantidade").scrollIntoView({ behavior: "smooth", block: "center" });
+      alert("Não consegui ler a quantidade na foto — preencha esse campo antes de confirmar.");
+      return;
+    }
+
     const produto = $("#lbl-produto").value.trim();
     const codigo = $("#lbl-codigo").value.trim();
     const ean = $("#lbl-ean").value.trim();
-    const quantidade = parseFloat($("#lbl-quantidade").value) || 0;
+    const quantidade = parseFloat(qtdRaw);
     const lote = $("#lbl-lote").value.trim();
     const fabricacao = $("#lbl-fabricacao").value.trim();
     const validade = $("#lbl-validade").value.trim();

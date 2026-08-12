@@ -82,7 +82,7 @@ const OcrParser = (() => {
     fab: /FAB(?:RICA[ÇC][ÃA]O)?[\s.:]*[\D]{0,3}(\d{2}[\/\.\-]\d{2}[\/\.\-]\d{2,4})/i,
     val: /(?:VAL(?:IDADE)?|VENC(?:IMENTO)?)[\s.:]*[\D]{0,3}(\d{2}[\/\.\-]\d{2}[\/\.\-]\d{2,4})/i,
     codigo: /C[ÓO]D(?:IGO)?[\s.:]*([A-Z0-9\-]{2,20})/i,
-    qtd: /(?:QTD|QUANTIDADE)[\s.:]*(\d{1,6})/i,
+    qtd: /(?:QTDE?|QUANT(?:IDADE)?)[^\d]{0,10}(\d{1,6})/i,
     anyDate: /\d{2}[\/\.\-]\d{2}[\/\.\-]\d{2,4}/g,
   };
 
@@ -176,7 +176,7 @@ const OcrParser = (() => {
       lote,
       fabricacao,
       validade,
-      quantidade: qtd ? parseFloat(qtd) : 1,
+      quantidade: qtd ? parseFloat(qtd) : null,
       textoOriginal: rawText,
     };
   }
