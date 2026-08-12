@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+    <infNFe Id="NFe35260812345678000199550010000012341123456789" versao="4.00">
+      <ide>
+        <cUF>35</cUF>
+        <nNF>1234</nNF>
+        <dhEmi>2026-08-10T09:00:00-03:00</dhEmi>
+      </ide>
+      <emit>
+        <CNPJ>12345678000199</CNPJ>
+        <xNome>Distribuidora Exemplo LTDA</xNome>
+      </emit>
+      <det nItem="1">
+        <prod>
+          <cProd>1001</cProd>
+          <cEAN>7891234567890</cEAN>
+          <xProd>Refrigerante Cola 2L</xProd>
+          <NCM>22021000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>50.0000</qCom>
+          <vUnCom>18.5000</vUnCom>
+          <vProd>925.00</vProd>
+          <cEANTrib>7891234567890</cEANTrib>
+          <uTrib>CX</uTrib>
+          <qTrib>50.0000</qTrib>
+        </prod>
+      </det>
+      <det nItem="2">
+        <prod>
+          <cProd>1002</cProd>
+          <cEAN>7899876543210</cEAN>
+          <xProd>Suco de Uva 1L</xProd>
+          <NCM>20096900</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>30.0000</qCom>
+          <vUnCom>22.0000</vUnCom>
+          <vProd>660.00</vProd>
+          <cEANTrib>7899876543210</cEANTrib>
+          <uTrib>CX</uTrib>
+          <qTrib>30.0000</qTrib>
+        </prod>
+      </det>
+      <det nItem="3">
+        <prod>
+          <cProd>1003</cProd>
+          <cEAN>7891111222333</cEAN>
+          <xProd>Água Mineral 500ml (fardo)</xProd>
+          <NCM>22011000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>FD</uCom>
+          <qCom>100.0000</qCom>
+          <vUnCom>9.0000</vUnCom>
+          <vProd>900.00</vProd>
+          <cEANTrib>7891111222333</cEANTrib>
+          <uTrib>FD</uTrib>
+          <qTrib>100.0000</qTrib>
+        </prod>
+      </det>
+    </infNFe>
+  </NFe>
+</nfeProc>

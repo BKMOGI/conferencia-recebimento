@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1f6f43" />
+<title>Conferência de Recebimento</title>
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" href="./icons/icon-192.png" />
+<link rel="apple-touch-icon" href="./icons/icon-192.png" />
+<link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <button id="btn-back" class="icon-btn" aria-label="Voltar" hidden>←</button>
+  <h1 id="topbar-title">Conferência de Recebimento</h1>
+</header>
+
+<main id="app">
+
+  <!-- HOME -->
+  <section class="screen" id="screen-home">
+    <button class="btn-primary" id="btn-nova-conferencia">+ Nova conferência</button>
+    <h2 class="section-title">Conferências salvas</h2>
+    <div id="lista-sessoes" class="lista-sessoes"></div>
+  </section>
+
+  <!-- IMPORTAR NF -->
+  <section class="screen" id="screen-import">
+    <p class="hint">Como você tem a Nota Fiscal desta entrega?</p>
+
+    <label class="import-option">
+      <span class="import-option-title">XML da NFe</span>
+      <span class="import-option-desc">Mais confiável — lê os itens automaticamente.</span>
+      <input type="file" id="input-xml" accept=".xml,text/xml" hidden />
+    </label>
+
+    <label class="import-option">
+      <span class="import-option-title">PDF da NF (DANFE)</span>
+      <span class="import-option-desc">O app tenta ler a tabela de itens por OCR — você revisa antes de começar.</span>
+      <input type="file" id="input-pdf" accept="application/pdf" hidden />
+    </label>
+
+    <label class="import-option">
+      <span class="import-option-title">Fotografar a NF (papel)</span>
+      <span class="import-option-desc">Tire uma foto da nota — o app tenta ler por OCR — você revisa antes de começar.</span>
+      <input type="file" id="input-foto-nf" accept="image/*" capture="environment" hidden />
+    </label>
+
+    <label class="import-option">
+      <span class="import-option-title">Digitar manualmente</span>
+      <span class="import-option-desc">Começar uma conferência vazia e adicionar os itens à mão.</span>
+    </label>
+    <button class="btn-secondary" id="btn-manual">Começar em branco</button>
+
+    <div id="import-status" class="status-box" hidden></div>
+  </section>
+
+  <!-- REVISÃO DOS ITENS DA NF -->
+  <section class="screen" id="screen-review-nf">
+    <div class="nf-meta">
+      <label>Nº da NF <input type="text" id="input-numero-nf" /></label>
+      <label>Fornecedor <input type="text" id="input-fornecedor" /></label>
+    </div>
+    <p class="hint">Confira os itens antes de começar a conferência. Você pode editar ou apagar linhas.</p>
+    <div id="tabela-itens-nf" class="tabela-itens"></div>
+    <button class="btn-secondary" id="btn-add-item">+ Adicionar item</button>
+    <button class="btn-primary" id="btn-confirmar-nf">Começar conferência</button>
+  </section>
+
+  <!-- CONFERÊNCIA -->
+  <section class="screen" id="screen-conference">
+    <div class="resumo-topo" id="resumo-topo"></div>
+    <button class="btn-primary btn-foto" id="btn-fotografar">📷 Fotografar etiqueta da caixa</button>
+    <input type="file" id="input-foto-etiqueta" accept="image/*" capture="environment" hidden />
+    <div id="lista-itens-conferencia" class="tabela-itens"></div>
+    <button class="btn-secondary" id="btn-finalizar">Finalizar conferência</button>
+  </section>
+
+  <!-- REVISÃO DA ETIQUETA (OCR) -->
+  <section class="screen" id="screen-review-label">
+    <div class="label-preview">
+      <img id="label-foto-preview" alt="Foto da etiqueta" />
+    </div>
+    <div id="label-ocr-status" class="status-box"></div>
+    <div class="form-etiqueta">
+      <label>Produto <input type="text" id="lbl-produto" /></label>
+      <label>Código <input type="text" id="lbl-codigo" /></label>
+      <label>Código de barras (EAN) <input type="text" id="lbl-ean" inputmode="numeric" /></label>
+      <label>Quantidade <input type="number" id="lbl-quantidade" step="0.01" /></label>
+      <label>Lote <input type="text" id="lbl-lote" /></label>
+      <label>Data de fabricação <input type="text" id="lbl-fabricacao" placeholder="DD/MM/AAAA" /></label>
+      <label>Data de validade <input type="text" id="lbl-validade" placeholder="DD/MM/AAAA" /></label>
+    </div>
+    <div class="match-info" id="match-info"></div>
+    <button class="btn-primary" id="btn-confirmar-etiqueta">Confirmar e marcar como recebido</button>
+    <button class="btn-secondary" id="btn-descartar-etiqueta">Descartar</button>
+  </section>
+
+  <!-- RESUMO / EXPORTAR -->
+  <section class="screen" id="screen-summary">
+    <div id="resumo-final" class="resumo-final"></div>
+    <button class="btn-primary" id="btn-export-conferencia">⬇ Baixar relatório de conferência (.xlsx)</button>
+    <button class="btn-primary" id="btn-export-lote">⬇ Baixar controle de lote (.xlsx)</button>
+    <button class="btn-secondary" id="btn-voltar-conferencia">Voltar para a conferência</button>
+    <button class="btn-secondary" id="btn-nova-conferencia-2">Nova conferência</button>
+  </section>
+
+</main>
+
+<div id="loading-overlay" class="loading-overlay" hidden>
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p id="loading-text">Processando…</p>
+  </div>
+</div>
+
+<script src="./vendor/tesseract.min.js"></script>
+<script src="./vendor/pdf.min.js"></script>
+<script src="./vendor/xlsx.full.min.js"></script>
+<script src="./js/db.js"></script>
+<script src="./js/nfeParser.js"></script>
+<script src="./js/ocrParser.js"></script>
+<script src="./js/export.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
