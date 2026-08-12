@@ -98,6 +98,18 @@ const OcrParser = (() => {
     return "";
   }
 
+  // Muitas etiquetas mostram o código do produto como um número grande e
+  // isolado, sem a palavra "código" do lado (ex: etiquetas da Bread King).
+  // Se não achou via "COD:", procura uma linha com só dígitos (3 a 7) que
+  // não seja o EAN nem coincida com lote/data já identificados.
+  function guessCodigoAvulso(lines, excluir) {
+    for (const line of lines) {
+      const clean = line.trim().replace(/\s+/g, "");
+      if (/^\d{3,7}$/.test(clean) && !excluir.includes(clean)) return clean;
+    }
+    return "";
+  }
+
   function parseEtiqueta(rawText) {
     const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const text = rawText.replace(/\s+/g, " ");
@@ -105,10 +117,14 @@ const OcrParser = (() => {
     const lote = (text.match(RE.lote) || [])[1] || "";
     const fab = normalizeDate((text.match(RE.fab) || [])[1] || "");
     const val = normalizeDate((text.match(RE.val) || [])[1] || "");
-    const codigo = (text.match(RE.codigo) || [])[1] || "";
-    const qtd = (text.match(RE.qtd) || [])[1] || "";
     const ean = (text.match(RE.ean) || [])[1] || "";
+    const qtd = (text.match(RE.qtd) || [])[1] || "";
     const produto = guessProductName(lines);
+
+    let codigo = (text.match(RE.codigo) || [])[1] || "";
+    if (!codigo) {
+      codigo = guessCodigoAvulso(lines, [lote, fab, val, ean].filter(Boolean));
+    }
 
     // Se não achou FAB/VAL rotulados, tenta pegar as duas primeiras datas soltas do texto.
     let fabricacao = fab;
