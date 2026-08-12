@@ -444,7 +444,10 @@
     const box = $("#match-info");
     if (match) {
       box.className = "match-info matched";
-      box.textContent = `✓ Encontrado na NF: ${match.descricao || match.codigo}`;
+      const contaPorCaixa = (match.unidade || "").trim().toUpperCase() === "CX";
+      box.textContent = contaPorCaixa
+        ? `✓ Encontrado na NF: ${match.descricao || match.codigo} — na NF esse item é contado por CAIXA: essa foto vai somar 1 caixa (não a quantidade impressa dentro dela).`
+        : `✓ Encontrado na NF: ${match.descricao || match.codigo}`;
       $("#lbl-produto").value = match.descricao || $("#lbl-produto").value;
       $("#lbl-produto-select").value = match.id;
     } else {
@@ -483,7 +486,13 @@
 
     let match = findMatch({ ean, codigo });
     if (match) {
-      match.quantidadeRecebida = (match.quantidadeRecebida || 0) + quantidade;
+      // A NF pode contar em CAIXA (unidade "CX") — nesse caso a quantidade
+      // impressa na etiqueta é o que tem DENTRO da caixa, não quantas caixas
+      // chegaram. Cada foto confirmada = 1 caixa recebida. Pra qualquer outra
+      // unidade (PCT, UN, KG...) a NF já conta o conteúdo, então soma normal.
+      const contaPorCaixa = (match.unidade || "").trim().toUpperCase() === "CX";
+      const incremento = contaPorCaixa ? 1 : quantidade;
+      match.quantidadeRecebida = (match.quantidadeRecebida || 0) + incremento;
       if (!match.ean && ean) match.ean = ean;
     } else {
       match = {
