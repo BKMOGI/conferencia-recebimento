@@ -1,4 +1,4 @@
-const CACHE_NAME = "conferencia-recebimento-v3";
+const CACHE_NAME = "conferencia-recebimento-v4";
 
 // Bibliotecas grandes que quase nunca mudam: cache primeiro (funcionam offline).
 const VENDOR_ASSETS = [
@@ -24,6 +24,8 @@ const APP_ASSETS = [
   "./js/db.js",
   "./js/nfeParser.js",
   "./js/ocrParser.js",
+  "./js/catalogParser.js",
+  "./js/barcodeScanner.js",
   "./js/export.js",
 ];
 

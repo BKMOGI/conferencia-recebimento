@@ -36,6 +36,7 @@
   function goBack() {
     const prev = screenStack.pop();
     if (!prev) return;
+    if ($(".screen.active").id === "screen-scan") BarcodeScanner.parar();
     $$(".screen").forEach((s) => s.classList.remove("active"));
     $(`#${prev.id}`).classList.add("active");
     $("#topbar-title").textContent = prev.title;
@@ -83,7 +84,43 @@
 
   // ---------- HOME ----------
 
+  async function renderCatalogoStatus() {
+    const count = await Db.contarCatalogo();
+    const el = $("#catalogo-status");
+    if (count === 0) {
+      el.textContent = "Nenhum catálogo de código de barras importado ainda — sem ele, a leitura de código de barras não reconhece os produtos automaticamente.";
+    } else {
+      const dataStr = localStorage.getItem("catalogoImportadoEm");
+      const data = dataStr ? new Date(dataStr).toLocaleDateString("pt-BR") : "";
+      el.textContent = `${count} códigos de barras cadastrados${data ? " · importado em " + data : ""}.`;
+    }
+  }
+
+  $("#input-catalogo").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      showLoading("Lendo catálogo de código de barras…");
+      const buffer = await fileToArrayBuffer(file);
+      const text = await OcrParser.extractPdfText(buffer);
+      const entradas = CatalogParser.parseCatalogo(text);
+      hideLoading();
+      if (entradas.length === 0) {
+        alert("Não consegui reconhecer nenhum código de barras nesse PDF. Confira se é o relatório de GTIN certo.");
+        return;
+      }
+      await Db.saveCatalogo(entradas);
+      localStorage.setItem("catalogoImportadoEm", new Date().toISOString());
+      renderCatalogoStatus();
+    } catch (err) {
+      hideLoading();
+      alert("Erro ao importar o catálogo: " + err.message);
+    }
+    e.target.value = "";
+  });
+
   async function renderHome() {
+    renderCatalogoStatus();
     const sessions = await Db.listSessions();
     sessions.sort((a, b) => (b.criadoEm || "").localeCompare(a.criadoEm || ""));
     const el = $("#lista-sessoes");
@@ -356,6 +393,115 @@
       input.addEventListener("change", commit);
     });
   }
+
+  // ---------- LEITURA DE CÓDIGO DE BARRAS AO VIVO ----------
+
+  function normalizarCodigo(c) {
+    return (c || "").toString().trim().replace(/^0+/, "") || "0";
+  }
+
+  function beep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 880;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.12);
+      osc.onended = () => ctx.close();
+    } catch (e) {
+      // sem áudio disponível — sem problema, o feedback visual já mostra o resultado
+    }
+  }
+
+  let scanLog = []; // [{ itemId }] — lidos na sessão atual de escaneamento
+
+  function showScanFeedback(msg, tipo) {
+    const el = $("#scan-feedback");
+    el.textContent = msg;
+    el.className = "scan-feedback show " + tipo;
+    clearTimeout(showScanFeedback._t);
+    showScanFeedback._t = setTimeout(() => el.classList.remove("show"), 2200);
+  }
+
+  function renderScanLista() {
+    const el = $("#scan-lista");
+    el.innerHTML = scanLog.map((entrada) => {
+      const item = currentSession.itens.find((i) => i.id === entrada.itemId);
+      if (!item) return "";
+      const st = statusOf(item);
+      return `<div class="item-card status-${st.toLowerCase()}">
+        <div class="item-desc">${escapeAttr(item.descricao) || "(sem descrição)"}</div>
+        <div class="item-codigos">Cód: ${item.codigo || "-"}</div>
+        <div class="item-qtd">
+          <span>${item.quantidadeRecebida} / ${item.quantidadeEsperada} ${item.unidade || ""}</span>
+          <span class="badge">${st}</span>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  async function onBarcodeDetected(barcode) {
+    const entrada = await Db.getCatalogoPorBarcode(barcode);
+    if (!entrada) {
+      showScanFeedback(`⚠ Código não reconhecido: ${barcode}`, "erro");
+      return;
+    }
+
+    const codigoNorm = normalizarCodigo(entrada.codigoProduto);
+    let item = currentSession.itens.find((i) => normalizarCodigo(i.codigo) === codigoNorm);
+    const contaPorCaixa = item && (item.unidade || "").trim().toUpperCase() === "CX";
+    const incremento = contaPorCaixa ? 1 : (entrada.unidadesPorCaixa || 1);
+
+    if (item) {
+      item.quantidadeRecebida = (item.quantidadeRecebida || 0) + incremento;
+      if (!item.ean && entrada.ehCaixa === false) item.ean = barcode;
+    } else {
+      item = {
+        id: `item_${Date.now()}`,
+        codigo: entrada.codigoProduto,
+        ean: entrada.ehCaixa ? "" : barcode,
+        descricao: entrada.descricao,
+        unidade: "",
+        quantidadeEsperada: 0,
+        quantidadeRecebida: incremento,
+      };
+      currentSession.itens.push(item);
+    }
+
+    await Db.saveSession(currentSession);
+    scanLog.unshift({ itemId: item.id });
+    renderScanLista();
+    showScanFeedback(`✓ ${item.descricao} (+${incremento}) — ${item.quantidadeRecebida}/${item.quantidadeEsperada || "?"}`, "ok");
+    beep();
+    if (navigator.vibrate) navigator.vibrate(70);
+  }
+
+  $("#btn-ler-codigo").addEventListener("click", async () => {
+    scanLog = [];
+    $("#scan-lista").innerHTML = "";
+    $("#scan-erro").hidden = true;
+    showScreen("screen-scan", "Ler código de barras", true);
+
+    const count = await Db.contarCatalogo();
+    if (count === 0) {
+      $("#scan-erro").hidden = false;
+      $("#scan-erro").textContent = "Nenhum catálogo importado ainda — os códigos não vão ser reconhecidos. Importe o catálogo na tela inicial primeiro.";
+    }
+
+    BarcodeScanner.iniciar($("#scan-video"), onBarcodeDetected, (err) => {
+      $("#scan-erro").hidden = false;
+      $("#scan-erro").textContent = "Não consegui abrir a câmera: " + err.message + " — use a foto da etiqueta ou digite manualmente.";
+    });
+  });
+
+  $("#btn-fechar-scan").addEventListener("click", () => {
+    BarcodeScanner.parar();
+    goBack();
+  });
 
   $("#btn-fotografar").addEventListener("click", () => {
     $("#input-foto-etiqueta").click();
