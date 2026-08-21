@@ -4,6 +4,16 @@
   let currentLabelData = null; // { produto, codigo, ean, lote, fabricacao, validade, quantidade, fotoDataUrl, matchedItemId }
   const screenStack = [];
 
+  // Uma entrega pode trazer várias NFs misturadas no mesmo caminhão — nesse
+  // modo, a tela de importar NF não cria uma sessão nova, ela junta os itens
+  // da NF importada na conferência que já está em andamento.
+  let mergeMode = false;
+  let stagingItens = null;
+
+  function itensEmEdicao() {
+    return mergeMode ? stagingItens : currentSession.itens;
+  }
+
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
@@ -36,7 +46,12 @@
   function goBack() {
     const prev = screenStack.pop();
     if (!prev) return;
-    if ($(".screen.active").id === "screen-scan") BarcodeScanner.parar();
+    const saindoDe = $(".screen.active").id;
+    if (saindoDe === "screen-scan") BarcodeScanner.parar();
+    if (mergeMode && (saindoDe === "screen-review-nf" || saindoDe === "screen-import")) {
+      mergeMode = false;
+      stagingItens = null;
+    }
     $$(".screen").forEach((s) => s.classList.remove("active"));
     $(`#${prev.id}`).classList.add("active");
     $("#topbar-title").textContent = prev.title;
@@ -133,7 +148,7 @@
       const ok = s.itens.filter((i) => i.quantidadeRecebida === i.quantidadeEsperada).length;
       return `<div class="sessao-item" data-id="${s.id}">
         <div class="sessao-info">
-          <div class="sessao-nf">NF ${s.numeroNF || "(sem número)"} — ${s.fornecedor || "sem fornecedor"}</div>
+          <div class="sessao-nf">${(s.numeroNF || "").includes(",") ? "NFs" : "NF"} ${s.numeroNF || "(sem número)"} — ${s.fornecedor || "sem fornecedor"}</div>
           <div class="sessao-meta">${ok}/${total} itens conferidos · ${new Date(s.criadoEm).toLocaleDateString("pt-BR")}</div>
         </div>
         <button class="btn-excluir-sessao" data-id="${s.id}" aria-label="Excluir">🗑</button>
@@ -178,12 +193,27 @@
   }
 
   function startReviewFromItens(itens, numeroNF, fornecedor) {
+    const itensTagged = itens.map((it, idx) => ({
+      ...it,
+      id: it.id || `item_${Date.now()}_${idx}`,
+      numeroNF: numeroNF || "",
+    }));
+
+    if (mergeMode) {
+      stagingItens = itensTagged;
+      $("#input-numero-nf").value = numeroNF || "";
+      $("#input-fornecedor").value = fornecedor || "";
+      renderTabelaItensNF();
+      showScreen("screen-review-nf", "Revisar itens da nova NF", true);
+      return;
+    }
+
     currentSession = {
       id: newSessionId(),
       numeroNF: numeroNF || "",
       fornecedor: fornecedor || "",
       criadoEm: new Date().toISOString(),
-      itens: itens.map((it, idx) => ({ ...it, id: it.id || `item_${idx + 1}` })),
+      itens: itensTagged,
       lotes: [],
     };
     $("#input-numero-nf").value = currentSession.numeroNF;
@@ -279,13 +309,19 @@
 
   // ---------- REVISÃO DOS ITENS DA NF ----------
 
+  function setItensEmEdicao(arr) {
+    if (mergeMode) stagingItens = arr;
+    else currentSession.itens = arr;
+  }
+
   function renderTabelaItensNF() {
     const el = $("#tabela-itens-nf");
-    if (currentSession.itens.length === 0) {
+    const itens = itensEmEdicao();
+    if (itens.length === 0) {
       el.innerHTML = '<p class="hint">Nenhum item ainda. Use "Adicionar item".</p>';
       return;
     }
-    el.innerHTML = currentSession.itens.map((item) => `
+    el.innerHTML = itens.map((item) => `
       <div class="item-card" data-id="${item.id}">
         <input type="text" class="f-descricao" placeholder="Descrição" value="${escapeAttr(item.descricao)}" style="margin-bottom:6px;" />
         <div style="display:flex; gap:6px; margin-bottom:6px;">
@@ -302,14 +338,14 @@
 
     el.querySelectorAll(".item-card").forEach((card) => {
       const id = card.dataset.id;
-      const item = currentSession.itens.find((i) => i.id === id);
+      const item = itensEmEdicao().find((i) => i.id === id);
       card.querySelector(".f-descricao").addEventListener("input", (e) => item.descricao = e.target.value);
       card.querySelector(".f-codigo").addEventListener("input", (e) => item.codigo = e.target.value);
       card.querySelector(".f-ean").addEventListener("input", (e) => item.ean = e.target.value);
       card.querySelector(".f-qtd").addEventListener("input", (e) => item.quantidadeEsperada = parseFloat(e.target.value) || 0);
       card.querySelector(".f-unid").addEventListener("input", (e) => item.unidade = e.target.value);
       card.querySelector(".btn-remove").addEventListener("click", () => {
-        currentSession.itens = currentSession.itens.filter((i) => i.id !== id);
+        setItensEmEdicao(itensEmEdicao().filter((i) => i.id !== id));
         renderTabelaItensNF();
       });
     });
@@ -320,7 +356,7 @@
   }
 
   $("#btn-add-item").addEventListener("click", () => {
-    currentSession.itens.push({
+    itensEmEdicao().push({
       id: `item_${Date.now()}`,
       codigo: "", ean: "", descricao: "", unidade: "",
       quantidadeEsperada: 0, quantidadeRecebida: 0,
@@ -328,9 +364,33 @@
     renderTabelaItensNF();
   });
 
+  function juntarSemRepetir(atual, novo) {
+    if (!novo) return atual;
+    if (!atual) return novo;
+    const partes = atual.split(",").map((s) => s.trim());
+    return partes.includes(novo) ? atual : `${atual}, ${novo}`;
+  }
+
   $("#btn-confirmar-nf").addEventListener("click", async () => {
-    currentSession.numeroNF = $("#input-numero-nf").value.trim();
-    currentSession.fornecedor = $("#input-fornecedor").value.trim();
+    const numeroNF = $("#input-numero-nf").value.trim();
+    const fornecedor = $("#input-fornecedor").value.trim();
+
+    if (mergeMode) {
+      stagingItens.forEach((it) => { if (!it.numeroNF) it.numeroNF = numeroNF; });
+      currentSession.itens.push(...stagingItens);
+      currentSession.numeroNF = juntarSemRepetir(currentSession.numeroNF, numeroNF);
+      currentSession.fornecedor = juntarSemRepetir(currentSession.fornecedor, fornecedor);
+      mergeMode = false;
+      stagingItens = null;
+      await Db.saveSession(currentSession);
+      showScreen("screen-conference", `NF ${currentSession.numeroNF || ""}`, true);
+      renderConference();
+      return;
+    }
+
+    currentSession.numeroNF = numeroNF;
+    currentSession.fornecedor = fornecedor;
+    currentSession.itens.forEach((it) => { if (!it.numeroNF) it.numeroNF = numeroNF; });
     await Db.saveSession(currentSession);
     showScreen("screen-conference", `NF ${currentSession.numeroNF || ""}`, true);
     renderConference();
@@ -347,6 +407,9 @@
     const counts = { OK: 0, FALTA: 0, SOBRA: 0, PENDENTE: 0 };
     itens.forEach((i) => counts[statusOf(i)]++);
 
+    const nfsUnicas = new Set(itens.map((i) => i.numeroNF).filter(Boolean));
+    const multiNF = nfsUnicas.size > 1;
+
     $("#resumo-topo").innerHTML = `
       <div class="resumo-pill"><span class="n">${counts.OK}</span><span class="l">OK</span></div>
       <div class="resumo-pill"><span class="n">${counts.PENDENTE}</span><span class="l">Pendente</span></div>
@@ -360,7 +423,7 @@
       return `
       <div class="item-card status-${st.toLowerCase()}" data-id="${item.id}">
         <div class="item-desc">${escapeAttr(item.descricao) || "(sem descrição)"}</div>
-        <div class="item-codigos">Cód: ${item.codigo || "-"} · EAN: ${item.ean || "-"}</div>
+        <div class="item-codigos">Cód: ${item.codigo || "-"} · EAN: ${item.ean || "-"}${multiNF ? " · NF " + escapeAttr(item.numeroNF || "-") : ""}</div>
         <div class="item-qtd">
           <span>${item.quantidadeRecebida} / ${item.quantidadeEsperada} ${item.unidade || ""}</span>
           <span class="badge">${st}</span>
@@ -398,6 +461,16 @@
 
   function normalizarCodigo(c) {
     return (c || "").toString().trim().replace(/^0+/, "") || "0";
+  }
+
+  // Com várias NFs juntadas na mesma conferência, o mesmo código de produto
+  // pode aparecer em mais de uma nota. Entre os candidatos, prioriza um que
+  // ainda esteja pendente/faltando — assim não fica sempre creditando na
+  // primeira NF da lista enquanto a outra nunca recebe nada.
+  function melhorCandidato(candidatos) {
+    if (candidatos.length <= 1) return candidatos[0] || null;
+    const pendente = candidatos.find((i) => (i.quantidadeRecebida || 0) < (i.quantidadeEsperada || 0));
+    return pendente || candidatos[0];
   }
 
   function beep() {
@@ -452,7 +525,7 @@
     }
 
     const codigoNorm = normalizarCodigo(entrada.codigoProduto);
-    let item = currentSession.itens.find((i) => normalizarCodigo(i.codigo) === codigoNorm);
+    let item = melhorCandidato(currentSession.itens.filter((i) => normalizarCodigo(i.codigo) === codigoNorm));
     const contaPorCaixa = item && (item.unidade || "").trim().toUpperCase() === "CX";
     const incremento = contaPorCaixa ? 1 : (entrada.unidadesPorCaixa || 1);
 
@@ -529,11 +602,11 @@
 
   function findMatch(labelData) {
     if (labelData.ean) {
-      const m = currentSession.itens.find((i) => i.ean && i.ean === labelData.ean);
+      const m = melhorCandidato(currentSession.itens.filter((i) => i.ean && i.ean === labelData.ean));
       if (m) return m;
     }
     if (labelData.codigo) {
-      const m = currentSession.itens.find((i) => i.codigo && i.codigo === labelData.codigo);
+      const m = melhorCandidato(currentSession.itens.filter((i) => i.codigo && i.codigo === labelData.codigo));
       if (m) return m;
     }
     return null;
@@ -707,6 +780,12 @@
   $("#btn-finalizar").addEventListener("click", () => {
     renderResumoFinal();
     showScreen("screen-summary", "Resumo da conferência", true);
+  });
+
+  $("#btn-add-outra-nf").addEventListener("click", () => {
+    mergeMode = true;
+    showImportStatusReset();
+    showScreen("screen-import", "Adicionar outra NF", true);
   });
 
   // ---------- RESUMO / EXPORTAR ----------

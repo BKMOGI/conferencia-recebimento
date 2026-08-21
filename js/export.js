@@ -13,6 +13,7 @@ const ExportModule = (() => {
 
   function exportRelatorioConferencia(session) {
     const rows = session.itens.map((item) => ({
+      "Nº NF": item.numeroNF || session.numeroNF,
       "Código": item.codigo,
       "EAN": item.ean,
       "Descrição": item.descricao,
@@ -24,7 +25,7 @@ const ExportModule = (() => {
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 14 }, { wch: 16 }, { wch: 40 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }];
+    ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 40 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Conferência");
