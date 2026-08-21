@@ -1,4 +1,4 @@
-const CACHE_NAME = "conferencia-recebimento-v4";
+const CACHE_NAME = "conferencia-recebimento-v5";
 
 // Bibliotecas grandes que quase nunca mudam: cache primeiro (funcionam offline).
 const VENDOR_ASSETS = [
@@ -27,6 +27,7 @@ const APP_ASSETS = [
   "./js/catalogParser.js",
   "./js/barcodeScanner.js",
   "./js/export.js",
+  "./data/catalogo.json",
 ];
 
 self.addEventListener("install", (event) => {

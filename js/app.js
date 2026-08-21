@@ -105,9 +105,34 @@
     if (count === 0) {
       el.textContent = "Nenhum catálogo de código de barras importado ainda — sem ele, a leitura de código de barras não reconhece os produtos automaticamente.";
     } else {
+      const origem = localStorage.getItem("catalogoOrigem");
       const dataStr = localStorage.getItem("catalogoImportadoEm");
-      const data = dataStr ? new Date(dataStr).toLocaleDateString("pt-BR") : "";
-      el.textContent = `${count} códigos de barras cadastrados${data ? " · importado em " + data : ""}.`;
+      if (origem === "padrao" && !dataStr) {
+        el.textContent = `${count} códigos de barras cadastrados (catálogo já vem pronto no app). Importe um PDF atualizado aqui se algum produto mudar.`;
+      } else {
+        const data = dataStr ? new Date(dataStr).toLocaleDateString("pt-BR") : "";
+        el.textContent = `${count} códigos de barras cadastrados${data ? " · atualizado em " + data : ""}.`;
+      }
+    }
+  }
+
+  // Carrega o catálogo que já vem junto com o app (data/catalogo.json) na
+  // primeira vez que abre — só se ainda não tiver nada salvo, pra não
+  // sobrescrever um catálogo que ela já tenha importado/atualizado.
+  async function carregarCatalogoPadraoSeVazio() {
+    const count = await Db.contarCatalogo();
+    if (count > 0) return;
+    try {
+      const resp = await fetch("./data/catalogo.json");
+      if (!resp.ok) return;
+      const entradas = await resp.json();
+      if (!Array.isArray(entradas) || entradas.length === 0) return;
+      await Db.saveCatalogo(entradas);
+      localStorage.setItem("catalogoOrigem", "padrao");
+      localStorage.removeItem("catalogoImportadoEm");
+    } catch (e) {
+      // sem conexão no primeiro carregamento, ou arquivo não encontrado —
+      // sem problema, ela ainda pode importar manualmente na tela inicial.
     }
   }
 
@@ -125,6 +150,7 @@
         return;
       }
       await Db.saveCatalogo(entradas);
+      localStorage.setItem("catalogoOrigem", "manual");
       localStorage.setItem("catalogoImportadoEm", new Date().toISOString());
       renderCatalogoStatus();
     } catch (err) {
@@ -843,5 +869,6 @@
   }
 
   showScreen("screen-home", "Conferência de Recebimento", false);
+  carregarCatalogoPadraoSeVazio().then(renderHome);
   renderHome();
 })();
