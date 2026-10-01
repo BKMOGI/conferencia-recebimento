@@ -14,6 +14,14 @@
     return mergeMode ? stagingItens : currentSession.itens;
   }
 
+  let filtroConferencia = "";
+
+  function limparFiltroConferencia() {
+    filtroConferencia = "";
+    const campo = $("#busca-item-conferencia");
+    if (campo) campo.value = "";
+  }
+
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
@@ -184,6 +192,7 @@
       node.addEventListener("click", async () => {
         const id = node.closest(".sessao-item").dataset.id;
         currentSession = await Db.getSession(id);
+        limparFiltroConferencia();
         showScreen("screen-conference", `NF ${currentSession.numeroNF || ""}`, true);
         renderConference();
       });
@@ -409,6 +418,7 @@
       mergeMode = false;
       stagingItens = null;
       await Db.saveSession(currentSession);
+      limparFiltroConferencia();
       showScreen("screen-conference", `NF ${currentSession.numeroNF || ""}`, true);
       renderConference();
       return;
@@ -418,6 +428,7 @@
     currentSession.fornecedor = fornecedor;
     currentSession.itens.forEach((it) => { if (!it.numeroNF) it.numeroNF = numeroNF; });
     await Db.saveSession(currentSession);
+    limparFiltroConferencia();
     showScreen("screen-conference", `NF ${currentSession.numeroNF || ""}`, true);
     renderConference();
   });
@@ -443,8 +454,19 @@
       <div class="resumo-pill"><span class="n">${counts.SOBRA}</span><span class="l">Sobra</span></div>
     `;
 
+    const termo = filtroConferencia.trim().toLowerCase();
+    const itensExibidos = termo
+      ? itens.filter((item) =>
+          (item.codigo || "").toLowerCase().includes(termo) ||
+          (item.descricao || "").toLowerCase().includes(termo)
+        )
+      : itens;
+
     const el = $("#lista-itens-conferencia");
-    el.innerHTML = itens.map((item) => {
+    if (termo && itensExibidos.length === 0) {
+      el.innerHTML = '<p class="hint">Nenhum item encontrado pra essa busca.</p>';
+    } else {
+    el.innerHTML = itensExibidos.map((item) => {
       const st = statusOf(item);
       return `
       <div class="item-card status-${st.toLowerCase()}" data-id="${item.id}">
@@ -461,6 +483,7 @@
         </div>
       </div>`;
     }).join("");
+    }
 
     el.querySelectorAll(".item-card").forEach((card) => {
       const id = card.dataset.id;
@@ -482,6 +505,14 @@
       input.addEventListener("change", commit);
     });
   }
+
+  $("#busca-item-conferencia").addEventListener("input", (e) => {
+    filtroConferencia = e.target.value;
+    renderConference();
+    // renderConference recria a lista, mas não mexe no campo de busca —
+    // só reposiciona o foco pra garantir que ele não se perca em nenhum navegador.
+    $("#busca-item-conferencia").focus();
+  });
 
   // ---------- LEITURA DE CÓDIGO DE BARRAS AO VIVO ----------
 

@@ -192,6 +192,12 @@ input[type="text"], input[type="number"] {
   width: 100%;
 }
 
+.busca-item {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 15px;
+}
+
 .tabela-itens { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 
 .item-card {
