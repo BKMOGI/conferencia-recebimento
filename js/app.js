@@ -181,6 +181,7 @@
       await Db.saveCatalogo(entradas);
       localStorage.setItem("catalogoOrigem", "manual");
       localStorage.setItem("catalogoImportadoEm", new Date().toISOString());
+      await carregarIndiceCatalogo();
       renderCatalogoStatus();
     } catch (err) {
       hideLoading();
@@ -213,6 +214,7 @@
       node.addEventListener("click", async () => {
         const id = node.closest(".sessao-item").dataset.id;
         currentSession = await Db.getSession(id);
+        if (!catalogoIndex) await carregarIndiceCatalogo();
         if (garantirIdsUnicos(currentSession)) await Db.saveSession(currentSession);
         limparFiltroConferencia();
         showScreen("screen-conference", `NF ${currentSession.numeroNF || ""}`, true);
@@ -374,6 +376,7 @@
   function renderTabelaItensNF() {
     const el = $("#tabela-itens-nf");
     const itens = itensEmEdicao();
+    itens.forEach(aplicarPorCaixa);
     if (itens.length === 0) {
       el.innerHTML = '<p class="hint">Nenhum item ainda. Use "Adicionar item".</p>';
       return;
@@ -388,6 +391,7 @@
         <div style="display:flex; gap:6px; align-items:center;">
           <input type="number" class="f-qtd" placeholder="Qtd. esperada" value="${item.quantidadeEsperada}" step="0.01" style="flex:1;" />
           <input type="text" class="f-unid" placeholder="Un." value="${escapeAttr(item.unidade)}" style="width:60px;" />
+          <input type="number" class="f-porcaixa" placeholder="Un/cx" title="Unidades (ou kg) por caixa" value="${item.porCaixa > 0 ? item.porCaixa : ""}" step="0.01" style="width:78px;" />
         </div>
         <button class="btn-remove">Remover</button>
       </div>
@@ -401,6 +405,7 @@
       card.querySelector(".f-ean").addEventListener("input", (e) => item.ean = e.target.value);
       card.querySelector(".f-qtd").addEventListener("input", (e) => item.quantidadeEsperada = parseFloat(e.target.value) || 0);
       card.querySelector(".f-unid").addEventListener("input", (e) => item.unidade = e.target.value);
+      card.querySelector(".f-porcaixa").addEventListener("input", (e) => item.porCaixa = parseFloat(e.target.value) || 0);
       card.querySelector(".btn-remove").addEventListener("click", () => {
         setItensEmEdicao(itensEmEdicao().filter((i) => i.id !== id));
         renderTabelaItensNF();
@@ -458,6 +463,89 @@
 
   // ---------- CONFERÊNCIA ----------
 
+  // ---------- CAIXAS x UNIDADES ----------
+  //
+  // A NF pode contar em CX, PCT, UN, KG... mas o caminhão chega em CAIXAS.
+  // Pra não ter que fazer conta de cabeça (ex: 100 PCT = 10 caixas de 10),
+  // descobre quantas unidades vêm em cada caixa — pelo catálogo de código de
+  // barras (código DUN da caixa) ou, na falta dele, pela descrição da NF
+  // ("CX C/10 UNID") — e mostra/confere em caixas.
+
+  let catalogoIndex = null; // { porBarcode: Map, caixaPorCodigo: Map }
+
+  async function carregarIndiceCatalogo() {
+    const entradas = await Db.listarCatalogo();
+    const porBarcode = new Map();
+    const caixaPorCodigo = new Map();
+    const gtinsPorCodigo = new Map();
+    for (const e of entradas) {
+      porBarcode.set(e.barcode, e);
+      if (!e.ehCaixa) {
+        const kg = normalizarCodigo(e.codigoProduto);
+        if (!gtinsPorCodigo.has(kg)) gtinsPorCodigo.set(kg, new Set());
+        gtinsPorCodigo.get(kg).add(e.barcode);
+      }
+      if (e.ehCaixa && e.unidadesPorCaixa > 1) {
+        const k = normalizarCodigo(e.codigoProduto);
+        if (!caixaPorCodigo.has(k)) caixaPorCodigo.set(k, e.unidadesPorCaixa);
+      }
+    }
+    catalogoIndex = { porBarcode, caixaPorCodigo, gtinsPorCodigo };
+  }
+
+  function fmtN(n) {
+    if (!isFinite(n)) return "0";
+    return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(".", ",");
+  }
+
+  function descobrirPorCaixa(item) {
+    const un = (item.unidade || "").trim().toUpperCase();
+    if (un === "CX") return 0; // a NF já conta em caixas
+    const desc = item.descricao || "";
+
+    if (un === "KG") {
+      // quilos por caixa/fardo, quando a descrição diz ("FD C/5KG")
+      const m = desc.match(/C\/\s*(\d+(?:[.,]\d+)?)\s*KG/i);
+      return m ? parseFloat(m[1].replace(",", ".")) : 0;
+    }
+
+    if (catalogoIndex) {
+      const chaves = [];
+      const porEan = item.ean && catalogoIndex.porBarcode.get(item.ean);
+      if (porEan) chaves.push(normalizarCodigo(porEan.codigoProduto));
+      chaves.push(normalizarCodigo(item.codigo));
+      for (const k of chaves) {
+        const v = catalogoIndex.caixaPorCodigo.get(k);
+        if (v) return v;
+      }
+    }
+
+    const m = desc.match(/(?:CX|FD|CAIXA|FARDO)\s*C\/\s*(\d{1,4})/i);
+    return m && parseInt(m[1], 10) > 1 ? parseInt(m[1], 10) : 0;
+  }
+
+  function aplicarPorCaixa(item) {
+    if (typeof item.porCaixa !== "number") {
+      const v = descobrirPorCaixa(item);
+      if (!catalogoIndex && v === 0) return 0; // catálogo ainda carregando: não grava o "0"
+      item.porCaixa = v;
+    }
+    return item.porCaixa;
+  }
+
+  // Texto principal da quantidade: em caixas quando dá, senão na unidade da NF.
+  function textoQuantidade(item) {
+    const pc = aplicarPorCaixa(item) > 0 ? item.porCaixa : 0;
+    const un = item.unidade || "";
+    const rec = item.quantidadeRecebida || 0;
+    const esp = item.quantidadeEsperada || 0;
+    if (!pc) return { principal: `${fmtN(rec)} / ${fmtN(esp)} ${un}`, secundario: "" };
+    return {
+      principal: `${fmtN(rec / pc)} / ${fmtN(esp / pc)} cx`,
+      secundario: `${fmtN(rec)} / ${fmtN(esp)} ${un} · ${fmtN(pc)} ${un}/cx`,
+    };
+  }
+
   function statusOf(item) {
     return ExportModule.statusDoItem(item);
   }
@@ -496,13 +584,14 @@
         <div class="item-desc">${escapeAttr(item.descricao) || "(sem descrição)"}</div>
         <div class="item-codigos">Cód: ${item.codigo || "-"} · EAN: ${item.ean || "-"}${multiNF ? " · NF " + escapeAttr(item.numeroNF || "-") : ""}</div>
         <div class="item-qtd">
-          <span>${item.quantidadeRecebida} / ${item.quantidadeEsperada} ${item.unidade || ""}</span>
+          <span class="qtd-principal">${textoQuantidade(item).principal}</span>
           <span class="badge">${st}</span>
         </div>
+        ${textoQuantidade(item).secundario ? `<div class="item-sub">${textoQuantidade(item).secundario}</div>` : ""}
         <div class="item-editable-qtd">
-          <button class="qtd-menos">−</button>
+          <button class="qtd-menos">${item.porCaixa > 0 ? "− cx" : "−"}</button>
           <input type="number" class="qtd-input" value="${item.quantidadeRecebida}" step="0.01" />
-          <button class="qtd-mais">+</button>
+          <button class="qtd-mais">${item.porCaixa > 0 ? "+ cx" : "+"}</button>
         </div>
       </div>`;
     }).join("");
@@ -518,11 +607,13 @@
         renderConference();
       };
       card.querySelector(".qtd-menos").addEventListener("click", () => {
-        input.value = Math.max(0, (parseFloat(input.value) || 0) - 1);
+        const passo = item.porCaixa > 0 ? item.porCaixa : 1;
+        input.value = Math.max(0, +((parseFloat(input.value) || 0) - passo).toFixed(3));
         commit();
       });
       card.querySelector(".qtd-mais").addEventListener("click", () => {
-        input.value = (parseFloat(input.value) || 0) + 1;
+        const passo = item.porCaixa > 0 ? item.porCaixa : 1;
+        input.value = +((parseFloat(input.value) || 0) + passo).toFixed(3);
         commit();
       });
       input.addEventListener("change", commit);
@@ -590,7 +681,7 @@
         <div class="item-desc">${escapeAttr(item.descricao) || "(sem descrição)"}</div>
         <div class="item-codigos">Cód: ${item.codigo || "-"}</div>
         <div class="item-qtd">
-          <span>${item.quantidadeRecebida} / ${item.quantidadeEsperada} ${item.unidade || ""}</span>
+          <span>${textoQuantidade(item).principal}</span>
           <span class="badge">${st}</span>
         </div>
       </div>`;
@@ -604,14 +695,34 @@
       return;
     }
 
+    if (!catalogoIndex) await carregarIndiceCatalogo();
+
     const codigoNorm = normalizarCodigo(entrada.codigoProduto);
-    let item = melhorCandidato(currentSession.itens.filter((i) => normalizarCodigo(i.codigo) === codigoNorm));
-    const contaPorCaixa = item && (item.unidade || "").trim().toUpperCase() === "CX";
-    const incremento = contaPorCaixa ? 1 : (entrada.unidadesPorCaixa || 1);
+    let candidatos = currentSession.itens.filter((i) => normalizarCodigo(i.codigo) === codigoNorm);
+    if (!candidatos.length) {
+      // o código do produto na NF nem sempre é o mesmo do catálogo — tenta
+      // pelo código de barras da unidade (GTIN) que vem na descrição da NF.
+      const gtins = catalogoIndex.gtinsPorCodigo.get(codigoNorm) || new Set();
+      candidatos = currentSession.itens.filter((i) => i.ean && (gtins.has(i.ean) || i.ean === barcode));
+    }
+    let item = melhorCandidato(candidatos);
+    const un = item ? (item.unidade || "").trim().toUpperCase() : "";
+
+    let incremento;
+    if (un === "CX") {
+      incremento = 1; // a NF conta em caixas: cada leitura é 1 caixa
+    } else if (item && un === "KG" && entrada.ehCaixa && aplicarPorCaixa(item) > 0) {
+      incremento = item.porCaixa; // kg por caixa/fardo, vindo da descrição da NF
+    } else {
+      incremento = entrada.unidadesPorCaixa || 1;
+    }
 
     if (item) {
       item.quantidadeRecebida = (item.quantidadeRecebida || 0) + incremento;
       if (!item.ean && entrada.ehCaixa === false) item.ean = barcode;
+      if (entrada.ehCaixa && un !== "KG" && un !== "CX" && !(item.porCaixa > 0) && entrada.unidadesPorCaixa > 1) {
+        item.porCaixa = entrada.unidadesPorCaixa;
+      }
     } else {
       item = {
         id: novoItemId(),
@@ -628,7 +739,10 @@
     await Db.saveSession(currentSession);
     scanLog.unshift({ itemId: item.id });
     renderScanLista();
-    showScanFeedback(`✓ ${item.descricao} (+${incremento}) — ${item.quantidadeRecebida}/${item.quantidadeEsperada || "?"}`, "ok");
+    const pc = aplicarPorCaixa(item) > 0 ? item.porCaixa : 0;
+    const maisTxt = pc ? `+${fmtN(incremento / pc)} cx` : `+${fmtN(incremento)}`;
+    const totalTxt = textoQuantidade(item).principal.replace(/ \/ /, "/");
+    showScanFeedback(`✓ ${item.descricao} (${maisTxt}) — ${totalTxt}`, "ok");
     beep();
     if (navigator.vibrate) navigator.vibrate(70);
   }
@@ -923,6 +1037,6 @@
   }
 
   showScreen("screen-home", "Conferência de Recebimento", false);
-  carregarCatalogoPadraoSeVazio().then(renderHome);
+  carregarCatalogoPadraoSeVazio().then(carregarIndiceCatalogo).then(() => { renderHome(); if (currentSession && $(".screen.active").id === "screen-conference") renderConference(); });
   renderHome();
 })();

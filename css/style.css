@@ -192,6 +192,10 @@ input[type="text"], input[type="number"] {
   width: 100%;
 }
 
+.item-card .item-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.item-card .qtd-principal { font-weight: 700; font-size: 16px; }
+.item-card .item-editable-qtd button { min-width: 52px; }
+
 .busca-item {
   display: block;
   margin-bottom: 12px;

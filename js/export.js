@@ -18,6 +18,9 @@ const ExportModule = (() => {
       "EAN": item.ean,
       "Descrição": item.descricao,
       "Unidade": item.unidade,
+      "Un. por caixa": item.porCaixa > 0 ? item.porCaixa : "",
+      "Caixas esperadas": item.porCaixa > 0 ? +(item.quantidadeEsperada / item.porCaixa).toFixed(2) : "",
+      "Caixas recebidas": item.porCaixa > 0 ? +(item.quantidadeRecebida / item.porCaixa).toFixed(2) : "",
       "Qtd. Esperada": item.quantidadeEsperada,
       "Qtd. Recebida": item.quantidadeRecebida,
       "Diferença": item.quantidadeRecebida - item.quantidadeEsperada,
@@ -25,7 +28,7 @@ const ExportModule = (() => {
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 40 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }];
+    ws["!cols"] = [{ wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 40 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Conferência");

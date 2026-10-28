@@ -51,6 +51,16 @@ const Db = (() => {
     });
   }
 
+  async function listarCatalogo() {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_CATALOGO, "readonly");
+      const req = tx.objectStore(STORE_CATALOGO).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
   async function contarCatalogo() {
     const db = await open();
     return new Promise((resolve, reject) => {
@@ -103,6 +113,6 @@ const Db = (() => {
 
   return {
     saveSession, getSession, listSessions, deleteSession,
-    saveCatalogo, getCatalogoPorBarcode, contarCatalogo,
+    saveCatalogo, getCatalogoPorBarcode, contarCatalogo, listarCatalogo,
   };
 })();
