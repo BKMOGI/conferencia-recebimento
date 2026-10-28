@@ -240,18 +240,16 @@ const OcrParser = (() => {
   // específico — por isso usamos essa sequência como "âncora" pra encontrar
   // onde cada item começa e termina, em vez de tentar ler célula por célula
   // (que varia muito de layout pra layout e falha fácil).
-  const UNIDADES_NF = "PCT|CX|UN|KG|FD|CT|PC|DZ|LT|GL|SC|RL|MT|PAR";
-  // Âncora no início de linha: no texto extraído, o código do produto sempre
-  // começa uma linha nova. As linhas soltas de preço/imposto no meio são só
-  // números — por isso exige (via lookahead, sem consumir) que exista uma
-  // letra ainda na mesma linha do código, o que descarta essas linhas como
-  // falso começo de item. A descrição em si é capturada de forma não-gulosa,
-  // pois às vezes ela fica na mesma linha dos números da tabela, às vezes não.
-  const ITEM_ANCHOR_RE = new RegExp(
-    "^(\\d{2,10})[\\-\\d]*[ \\t]+(?=[^\\n]*[A-Za-zÀ-ÿ])([\\s\\S]{3,300}?)(\\d{8})\\s+(\\d{3})\\s+(\\d\\.?\\d{3})\\s+(" +
-      UNIDADES_NF + ")\\s+([\\d.,]+)\\s+([\\d.,]+)",
-    "gm"
-  );
+  // Cada item tem exatamente UMA sequência NCM · CST · CFOP · Unidade · Qtd ·
+  // V.Unit — é ela que define quantos itens a nota tem. O NCM às vezes vem
+  // com sufixo e quebrado em linhas ("19012010-\n01"), a unidade pode ser
+  // qualquer sigla curta (PCT, CX, UN, UND, KG...). Cada âncora vira
+  // exatamente um item: se a descrição de algum item vier num formato
+  // estranho, ele ainda é importado (só não deixa de existir nem se funde
+  // com o item seguinte, como acontecia antes).
+  const ITEM_ANCHOR_RE = /(?<!\d)(\d{8}(?:-\s*\d{1,2})?)\s+(\d{2,3})\s+(\d\.?\d{3})\s+([A-Za-z]{1,5})\s+([\d.,]+)\s+([\d.,]+)/g;
+  // Linha em que o item começa: código + descrição com letras.
+  const ITEM_HEADER_RE = /^(\d{2,10})(?:-\d+)?[ \t]+(?=.*[A-Za-zÀ-ÿ])/;
 
   function parseNumeroBR(str) {
     const n = parseFloat((str || "").replace(/\./g, "").replace(",", "."));
@@ -274,19 +272,35 @@ const OcrParser = (() => {
   function parseItensNF(rawText) {
     const text = rawText.replace(/[ \t]+/g, " ");
     const itens = [];
+    let fimAnterior = 0;
     let match;
     ITEM_ANCHOR_RE.lastIndex = 0;
     while ((match = ITEM_ANCHOR_RE.exec(text)) !== null) {
-      const [, codigo, descBlob, , , , unidade, quantStr] = match;
+      const unidade = match[4];
+      const quantStr = match[5];
+
+      // Tudo entre o fim do item anterior e esta âncora contém o cabeçalho do
+      // item atual (código + descrição, às vezes em várias linhas). O começo
+      // do item é a ÚLTIMA linha desse trecho que parece "código descrição".
+      const linhas = text.slice(fimAnterior, match.index).split("\n");
+      let inicio = -1;
+      for (let i = linhas.length - 1; i >= 0; i--) {
+        if (ITEM_HEADER_RE.test(linhas[i].trim())) { inicio = i; break; }
+      }
+      fimAnterior = match.index + match[0].length;
+      if (inicio === -1) continue;
+
+      const cabecalho = linhas.slice(inicio).join("\n").trim();
+      const codigo = cabecalho.match(ITEM_HEADER_RE)[1];
+      const descBlob = cabecalho.replace(ITEM_HEADER_RE, "");
       const eanMatch = descBlob.match(/GTIN:?\s*(\d{8,14})/i);
       const descricao = limparDescricao(descBlob);
-      if (descricao.length < 3) continue;
 
       itens.push({
         id: `ocr_${itens.length + 1}`,
         codigo,
         ean: eanMatch ? eanMatch[1] : "",
-        descricao,
+        descricao: descricao || "(sem descrição)",
         unidade,
         quantidadeEsperada: parseNumeroBR(quantStr),
         quantidadeRecebida: 0,

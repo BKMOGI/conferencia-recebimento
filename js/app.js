@@ -68,6 +68,27 @@
     if (prev.id === "screen-home") renderHome();
   }
 
+  // IDs de item precisam ser únicos na conferência inteira — com várias NFs
+  // juntas, ids como "ocr_1" repetiam entre notas e a quantidade digitada num
+  // item acabava sendo gravada em outro (e o item "zerava" na tela).
+  let uidSeq = 0;
+  function novoItemId() {
+    uidSeq += 1;
+    return `item_${Date.now().toString(36)}_${uidSeq}_${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  // Conferências salvas antes dessa correção podem ter ids repetidos: renomeia
+  // só os repetidos (o primeiro de cada id é mantido).
+  function garantirIdsUnicos(session) {
+    const vistos = new Set();
+    let mudou = false;
+    session.itens.forEach((it) => {
+      if (!it.id || vistos.has(it.id)) { it.id = novoItemId(); mudou = true; }
+      vistos.add(it.id);
+    });
+    return mudou;
+  }
+
   function newSessionId() {
     return `s_${Date.now()}`;
   }
@@ -192,6 +213,7 @@
       node.addEventListener("click", async () => {
         const id = node.closest(".sessao-item").dataset.id;
         currentSession = await Db.getSession(id);
+        if (garantirIdsUnicos(currentSession)) await Db.saveSession(currentSession);
         limparFiltroConferencia();
         showScreen("screen-conference", `NF ${currentSession.numeroNF || ""}`, true);
         renderConference();
@@ -230,7 +252,7 @@
   function startReviewFromItens(itens, numeroNF, fornecedor) {
     const itensTagged = itens.map((it, idx) => ({
       ...it,
-      id: it.id || `item_${Date.now()}_${idx}`,
+      id: novoItemId(),
       numeroNF: numeroNF || "",
     }));
 
@@ -392,7 +414,7 @@
 
   $("#btn-add-item").addEventListener("click", () => {
     itensEmEdicao().push({
-      id: `item_${Date.now()}`,
+      id: novoItemId(),
       codigo: "", ean: "", descricao: "", unidade: "",
       quantidadeEsperada: 0, quantidadeRecebida: 0,
     });
@@ -413,6 +435,7 @@
     if (mergeMode) {
       stagingItens.forEach((it) => { if (!it.numeroNF) it.numeroNF = numeroNF; });
       currentSession.itens.push(...stagingItens);
+      garantirIdsUnicos(currentSession);
       currentSession.numeroNF = juntarSemRepetir(currentSession.numeroNF, numeroNF);
       currentSession.fornecedor = juntarSemRepetir(currentSession.fornecedor, fornecedor);
       mergeMode = false;
@@ -591,7 +614,7 @@
       if (!item.ean && entrada.ehCaixa === false) item.ean = barcode;
     } else {
       item = {
-        id: `item_${Date.now()}`,
+        id: novoItemId(),
         codigo: entrada.codigoProduto,
         ean: entrada.ehCaixa ? "" : barcode,
         descricao: entrada.descricao,
@@ -812,7 +835,7 @@
       if (!match.ean && ean) match.ean = ean;
     } else {
       match = {
-        id: `item_${Date.now()}`,
+        id: novoItemId(),
         codigo, ean, descricao: produto, unidade: "",
         quantidadeEsperada: 0, quantidadeRecebida: quantidade,
       };
